@@ -1,0 +1,6 @@
+{
+  "name": "Receipt Cost Splitter with OCR",
+  "description": "An app to accurately split dining bills by parsing receipt items and assigning them to guests, with support for automatic tax and service charge calculations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
