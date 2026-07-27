@@ -7,6 +7,8 @@ import {
 } from "./demoData";
 import ReceiptScanner from "./components/ReceiptScanner";
 import SettlementSummary from "./components/SettlementSummary";
+import CurrencySelector from "./components/CurrencySelector";
+import { CURRENCIES, CurrencyInfo, formatPrice, convertAmount } from "./currencies";
 import {
   Plus,
   Trash2,
@@ -40,6 +42,10 @@ export default function App() {
   });
   const [assignments, setAssignments] = useState<Record<string, string[]>>({});
   const [isOcrLoading, setIsOcrLoading] = useState(false);
+
+  // Currency State
+  const [currentCurrency, setCurrentCurrency] = useState<CurrencyInfo>(CURRENCIES[0]);
+  const [autoConvertValues, setAutoConvertValues] = useState(true);
 
   // Valid official items present on the original parsed receipt
   const [officialReceiptItemNames, setOfficialReceiptItemNames] = useState<string[]>(
@@ -324,6 +330,20 @@ export default function App() {
     }));
   };
 
+  // Currency switch handler with auto-conversion
+  const handleCurrencyChange = (newCurrency: CurrencyInfo, convert: boolean) => {
+    if (convert && currentCurrency.code !== newCurrency.code) {
+      setReceipt((prev) => ({
+        ...prev,
+        items: prev.items.map((item) => ({
+          ...item,
+          totalPrice: convertAmount(item.totalPrice, currentCurrency, newCurrency),
+        })),
+      }));
+    }
+    setCurrentCurrency(newCurrency);
+  };
+
   return (
     <div className="min-h-screen bg-[#09090b] py-10 px-4 sm:px-6 lg:px-8 font-sans text-zinc-200">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -348,7 +368,13 @@ export default function App() {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <CurrencySelector
+              currentCurrency={currentCurrency}
+              onCurrencyChange={handleCurrencyChange}
+              autoConvertValues={autoConvertValues}
+              setAutoConvertValues={setAutoConvertValues}
+            />
             <button
               onClick={handleLoadWorkshopDemo}
               className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-md"
@@ -499,13 +525,13 @@ export default function App() {
                                   )}
                                 </div>
                                 <span className="text-xxs text-zinc-500 mt-0.5 block">
-                                  Unit price: ${(item.totalPrice / item.quantity).toFixed(2)}
+                                  Unit price: {formatPrice(item.totalPrice / item.quantity, currentCurrency)}
                                 </span>
                               </div>
 
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-zinc-100 text-xs font-mono">
-                                  ${item.totalPrice.toFixed(2)}
+                                  {formatPrice(item.totalPrice, currentCurrency)}
                                 </span>
                                 <div className="flex opacity-0 group-hover:opacity-100 transition-opacity gap-1">
                                   <button
@@ -585,7 +611,7 @@ export default function App() {
                     step="0.01"
                     value={manualItemPrice}
                     onChange={(e) => setManualItemPrice(e.target.value)}
-                    placeholder="$ Price"
+                    placeholder={`${currentCurrency.symbol} Price`}
                     className="w-20 text-xs p-2 border border-zinc-700 rounded-lg focus:outline-none bg-zinc-950/40 text-zinc-200 font-mono placeholder-zinc-600"
                   />
                   <button
@@ -678,7 +704,7 @@ export default function App() {
               <div className="border-t border-zinc-800/60 pt-4 space-y-2.5 text-xs text-zinc-300">
                 <div className="flex justify-between font-medium">
                   <span>Subtotal</span>
-                  <span className="font-mono font-bold text-zinc-100">${receipt.subtotal.toFixed(2)}</span>
+                  <span className="font-mono font-bold text-zinc-100">{formatPrice(receipt.subtotal, currentCurrency)}</span>
                 </div>
 
                 {editingTaxes ? (
@@ -734,7 +760,7 @@ export default function App() {
                           (edit)
                         </button>
                       </span>
-                      <span className="font-mono">${(receipt.subtotal * receipt.serviceChargePercent / 100).toFixed(2)}</span>
+                      <span className="font-mono">{formatPrice(receipt.subtotal * receipt.serviceChargePercent / 100, currentCurrency)}</span>
                     </div>
                     <div className="flex justify-between items-center text-zinc-400">
                       <span className="flex items-center gap-1">
@@ -751,7 +777,7 @@ export default function App() {
                         </button>
                       </span>
                       <span className="font-mono">
-                        ${((receipt.subtotal + (receipt.subtotal * receipt.serviceChargePercent / 100)) * receipt.taxPercent / 100).toFixed(2)}
+                        {formatPrice(((receipt.subtotal + (receipt.subtotal * receipt.serviceChargePercent / 100)) * receipt.taxPercent / 100), currentCurrency)}
                       </span>
                     </div>
                   </>
@@ -759,7 +785,7 @@ export default function App() {
 
                 <div className="flex justify-between border-t border-zinc-800/60 pt-2.5 font-bold text-zinc-100 text-sm">
                   <span>Grand Total</span>
-                  <span className="font-mono text-indigo-400 font-extrabold">${receipt.total.toFixed(2)}</span>
+                  <span className="font-mono text-indigo-400 font-extrabold">{formatPrice(receipt.total, currentCurrency)}</span>
                 </div>
               </div>
             </div>
@@ -880,10 +906,10 @@ export default function App() {
                               )}
                             </div>
                             <p className="text-xxs text-zinc-450 mt-1">
-                              Total Price: <span className="font-bold text-zinc-300">${item.totalPrice.toFixed(2)}</span>
+                              Total Price: <span className="font-bold text-zinc-300">{formatPrice(item.totalPrice, currentCurrency)}</span>
                               {shareCount > 0 && (
                                 <span className="text-indigo-400 font-semibold ml-2">
-                                  ➔ ${splitPrice.toFixed(2)} each ({shareCount} split)
+                                  ➔ {formatPrice(splitPrice, currentCurrency)} each ({shareCount} split)
                                 </span>
                               )}
                             </p>
@@ -964,6 +990,7 @@ export default function App() {
               receipt={receipt}
               guests={guests}
               assignments={assignments}
+              currency={currentCurrency}
             />
           )}
         </section>

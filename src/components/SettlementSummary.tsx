@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { ReceiptData, Guest } from "../types";
+import { CurrencyInfo, formatPrice } from "../currencies";
 import { Copy, Check, QrCode, Phone, Sparkles, Send, Share2, Info, Search, User, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -7,9 +8,10 @@ interface SettlementSummaryProps {
   receipt: ReceiptData;
   guests: Guest[];
   assignments: Record<string, string[]>; // itemId -> guestIds[]
+  currency: CurrencyInfo;
 }
 
-export default function SettlementSummary({ receipt, guests, assignments }: SettlementSummaryProps) {
+export default function SettlementSummary({ receipt, guests, assignments, currency }: SettlementSummaryProps) {
   const [payerId, setPayerId] = useState<string>(guests[0]?.id || "");
   const [copied, setCopied] = useState(false);
   const [selectedGuestForQr, setSelectedGuestForQr] = useState<string | null>(null);
@@ -85,27 +87,27 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
   const handleCopySummary = () => {
     let text = `📝 BILL SPLIT SUMMARY - ${receipt.items.length > 0 ? "Dinner Out" : "Meal"}\n`;
     text += `-------------------------------------------\n`;
-    text += `Subtotal: $${receipt.subtotal.toFixed(2)}\n`;
-    if (receipt.serviceChargePercent > 0) text += `Service Charge (${receipt.serviceChargePercent}%): $${(receipt.subtotal * receipt.serviceChargePercent / 100).toFixed(2)}\n`;
-    if (receipt.taxPercent > 0) text += `GST (${receipt.taxPercent}%): $${((receipt.subtotal * (1 + receipt.serviceChargePercent/100)) * receipt.taxPercent / 100).toFixed(2)}\n`;
-    text += `Grand Total: $${receipt.total.toFixed(2)}\n`;
+    text += `Subtotal: ${formatPrice(receipt.subtotal, currency)}\n`;
+    if (receipt.serviceChargePercent > 0) text += `Service Charge (${receipt.serviceChargePercent}%): ${formatPrice(receipt.subtotal * receipt.serviceChargePercent / 100, currency)}\n`;
+    if (receipt.taxPercent > 0) text += `GST (${receipt.taxPercent}%): ${formatPrice((receipt.subtotal * (1 + receipt.serviceChargePercent/100)) * receipt.taxPercent / 100, currency)}\n`;
+    text += `Grand Total: ${formatPrice(receipt.total, currency)}\n`;
     text += `Paid by: ${payerName}\n\n`;
 
     text += `👥 INDIVIDUAL BREAKDOWN\n`;
     text += `-------------------------------------------\n`;
     guestCosts.forEach((gc) => {
       if (gc.total > 0) {
-        text += `${gc.guest.name}: $${gc.total.toFixed(2)}\n`;
+        text += `${gc.guest.name}: ${formatPrice(gc.total, currency)}\n`;
         gc.items.forEach((item) => {
           const partStr = item.portion === 1 ? "" : ` (${(item.portion * 100).toFixed(0)}% share)`;
-          text += `  • ${item.name}: $${item.cost.toFixed(2)}${partStr}\n`;
+          text += `  • ${item.name}: ${formatPrice(item.cost, currency)}${partStr}\n`;
         });
-        text += `  (Sub: $${gc.subtotal.toFixed(2)} + Svc: $${gc.serviceCharge.toFixed(2)} + GST: $${gc.tax.toFixed(2)})\n\n`;
+        text += `  (Sub: ${formatPrice(gc.subtotal, currency)} + Svc: ${formatPrice(gc.serviceCharge, currency)} + GST: ${formatPrice(gc.tax, currency)})\n\n`;
       }
     });
 
     if (unassignedTotal > 0.01) {
-      text += `⚠️ Unassigned Items: $${unassignedTotal.toFixed(2)}\n\n`;
+      text += `⚠️ Unassigned Items: ${formatPrice(unassignedTotal, currency)}\n\n`;
     }
 
     text += `💸 REPAYMENTS TO ${payerName.toUpperCase()}\n`;
@@ -114,7 +116,7 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
       text += `No transfers needed. Everyone is settled!\n`;
     } else {
       transfers.forEach((t) => {
-        text += `• ${t.from} owes $${t.amount.toFixed(2)}\n`;
+        text += `• ${t.from} owes ${formatPrice(t.amount, currency)}\n`;
       });
     }
 
@@ -130,8 +132,8 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
         <div className="bg-[#111113] border border-zinc-800/80 p-4 rounded-2xl">
           <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Subtotal / Total Bill</p>
           <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-2xl font-extrabold text-zinc-100">${receipt.total.toFixed(2)}</span>
-            <span className="text-xs text-zinc-500">Sub: ${receipt.subtotal.toFixed(2)}</span>
+            <span className="text-2xl font-extrabold text-zinc-100">{formatPrice(receipt.total, currency)}</span>
+            <span className="text-xs text-zinc-500">Sub: {formatPrice(receipt.subtotal, currency)}</span>
           </div>
         </div>
 
@@ -142,7 +144,7 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
               {((totalAssignedSubtotal / (receipt.subtotal || 1)) * 100).toFixed(0)}%
             </span>
             <span className="text-xs text-zinc-500">
-              ${totalAssignedSubtotal.toFixed(2)} of ${receipt.subtotal.toFixed(2)}
+              {formatPrice(totalAssignedSubtotal, currency)} of {formatPrice(receipt.subtotal, currency)}
             </span>
           </div>
           <div className="w-full bg-zinc-800 h-1.5 rounded-full mt-2 overflow-hidden">
@@ -180,7 +182,7 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
           <div className="text-sm">
             <span className="font-semibold">Unassigned items remaining:</span> Some items are not yet fully assigned to guests.
             <p className="mt-1 text-zinc-400">
-              Currently, <span className="font-semibold text-amber-200">${unassignedTotal.toFixed(2)}</span> of the bill (including taxes) remains unassigned. Assign all items to ensure exact split accounts.
+              Currently, <span className="font-semibold text-amber-200">{formatPrice(unassignedTotal, currency)}</span> of the bill (including taxes) remains unassigned. Assign all items to ensure exact split accounts.
             </p>
           </div>
         </div>
@@ -279,14 +281,14 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
                               )}
                             </div>
                             <p className="text-xs text-zinc-400 mt-1">
-                              Subtotal: <span className="font-mono text-zinc-300">${gc.subtotal.toFixed(2)}</span> • 
-                              Svc Charge: <span className="font-mono text-zinc-300">${gc.serviceCharge.toFixed(2)}</span> • 
-                              GST: <span className="font-mono text-zinc-300">${gc.tax.toFixed(2)}</span>
+                              Subtotal: <span className="font-mono text-zinc-300">{formatPrice(gc.subtotal, currency)}</span> • 
+                              Svc Charge: <span className="font-mono text-zinc-300">{formatPrice(gc.serviceCharge, currency)}</span> • 
+                              GST: <span className="font-mono text-zinc-300">{formatPrice(gc.tax, currency)}</span>
                             </p>
                           </div>
                           <div className="text-left sm:text-right">
                             <p className="text-xxs text-zinc-500 uppercase tracking-widest font-bold">Total share amount</p>
-                            <p className="text-3xl font-black font-mono text-indigo-400 mt-0.5">${gc.total.toFixed(2)}</p>
+                            <p className="text-3xl font-black font-mono text-indigo-400 mt-0.5">{formatPrice(gc.total, currency)}</p>
                           </div>
                         </div>
 
@@ -312,7 +314,7 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
                                       </span>
                                     )}
                                   </span>
-                                  <span className="font-semibold text-zinc-400 font-mono">${item.cost.toFixed(2)}</span>
+                                  <span className="font-semibold text-zinc-400 font-mono">{formatPrice(item.cost, currency)}</span>
                                 </div>
                               ))}
                             </div>
@@ -325,7 +327,7 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
                             <div className="flex items-center gap-2">
                               <div className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
                               <span className="text-xs text-zinc-400">
-                                Please settle payment of <span className="font-bold text-indigo-400 font-mono">${gc.total.toFixed(2)}</span> to {payerName}
+                                Please settle payment of <span className="font-bold text-indigo-400 font-mono">{formatPrice(gc.total, currency)}</span> to {payerName}
                               </span>
                             </div>
                             <button
@@ -345,7 +347,7 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
                           <div className="mt-4 p-3 bg-indigo-950/20 border border-indigo-900/30 rounded-xl text-xs text-indigo-300 flex items-center gap-2">
                             <Info className="w-4 h-4 text-indigo-400 flex-shrink-0 animate-bounce" />
                             <span>
-                              Since you paid the grand total of <strong>${receipt.total.toFixed(2)}</strong>, other guests owe you a combined <strong>${transfers.reduce((sum, t) => sum + t.amount, 0).toFixed(2)}</strong>. Use the WhatsApp/Telegram format below to copy and share the summary with your group!
+                              Since you paid the grand total of <strong>{formatPrice(receipt.total, currency)}</strong>, other guests owe you a combined <strong>{formatPrice(transfers.reduce((sum, t) => sum + t.amount, 0), currency)}</strong>. Use the WhatsApp/Telegram format below to copy and share the summary with your group!
                             </span>
                           </div>
                         )}
@@ -383,10 +385,10 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
                       )}
                     </div>
                     <p className="text-xs text-zinc-400 mt-1">
-                      Sub: ${gc.subtotal.toFixed(2)} • Svc: ${gc.serviceCharge.toFixed(2)} • GST: ${gc.tax.toFixed(2)}
+                      Sub: {formatPrice(gc.subtotal, currency)} • Svc: {formatPrice(gc.serviceCharge, currency)} • GST: {formatPrice(gc.tax, currency)}
                     </p>
                   </div>
-                  <span className="text-xl font-black text-zinc-100">${gc.total.toFixed(2)}</span>
+                  <span className="text-xl font-black text-zinc-100">{formatPrice(gc.total, currency)}</span>
                 </div>
 
                 {/* Items Breakdowns */}
@@ -404,7 +406,7 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
                             </span>
                           )}
                         </span>
-                        <span className="font-mono text-zinc-400">${item.cost.toFixed(2)}</span>
+                        <span className="font-mono text-zinc-400">{formatPrice(item.cost, currency)}</span>
                       </div>
                     ))}
                   </div>
@@ -414,7 +416,7 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
                 {!isPayer && gc.total > 0 && (
                   <div className="mt-4 pt-3 border-t border-zinc-800/60 flex items-center justify-between">
                     <span className="text-xs text-zinc-400 font-medium">
-                      Owes {payerName} <span className="font-semibold text-indigo-400">${gc.total.toFixed(2)}</span>
+                      Owes {payerName} <span className="font-semibold text-indigo-400">{formatPrice(gc.total, currency)}</span>
                     </span>
                     <button
                       onClick={() => {
@@ -457,14 +459,14 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
           {`📝 BILL SPLIT SUMMARY - ${receipt.items.length > 0 ? "Trattoria Bella" : "Meal"}
 Paid by: ${payerName}
 ---------------------------------
-Total Bill: $${receipt.total.toFixed(2)}
+Total Bill: ${formatPrice(receipt.total, currency)}
 
 💸 REPAYMENTS:`}
           {"\n"}
           {transfers.length === 0
             ? "No transfers needed. Everyone is settled!"
             : transfers
-                .map((t) => `• ${t.from} owes ${t.to}: $${t.amount.toFixed(2)}`)
+                .map((t) => `• ${t.from} owes ${t.to}: ${formatPrice(t.amount, currency)}`)
                 .join("\n")}
         </div>
       </div>
@@ -499,7 +501,7 @@ Total Bill: $${receipt.total.toFixed(2)}
                   {guests.find((g) => g.id === selectedGuestForQr)?.name} ➔ {payerName}
                 </h4>
                 <div className="text-3xl font-black text-indigo-400 py-3 font-mono">
-                  ${guestCosts.find((gc) => gc.guest.id === selectedGuestForQr)?.total.toFixed(2)}
+                  {formatPrice(guestCosts.find((gc) => gc.guest.id === selectedGuestForQr)?.total || 0, currency)}
                 </div>
               </div>
 
