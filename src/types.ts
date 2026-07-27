@@ -3,6 +3,7 @@ export interface ReceiptItem {
   name: string;
   quantity: number;
   totalPrice: number; // total cost for this quantity of the item
+  isUnverified?: boolean; // Flagged if food item is not stated in official receipt
 }
 
 export interface Guest {

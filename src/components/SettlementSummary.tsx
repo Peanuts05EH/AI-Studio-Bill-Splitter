@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ReceiptData, Guest } from "../types";
-import { Copy, Check, QrCode, Phone, Sparkles, Send, Share2, Info, Search, User } from "lucide-react";
+import { Copy, Check, QrCode, Phone, Sparkles, Send, Share2, Info, Search, User, AlertTriangle } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 interface SettlementSummaryProps {
@@ -20,7 +20,7 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
   // Calculate costs per guest
   const guestCosts = guests.map((guest) => {
     let subtotal = 0;
-    const itemsList: { name: string; quantity: number; originalPrice: number; portion: number; cost: number }[] = [];
+    const itemsList: { name: string; quantity: number; originalPrice: number; portion: number; cost: number; isUnverified?: boolean }[] = [];
 
     receipt.items.forEach((item) => {
       const assignedGuests = assignments[item.id] || [];
@@ -35,6 +35,7 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
           originalPrice: item.totalPrice,
           portion: 1 / shareCount,
           cost: portionCost,
+          isUnverified: item.isUnverified,
         });
       }
     });
@@ -297,12 +298,17 @@ export default function SettlementSummary({ receipt, guests, assignments }: Sett
                           ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               {gc.items.map((item, idx) => (
-                                <div key={idx} className="flex justify-between items-center text-xs bg-zinc-950/60 border border-zinc-850 p-2.5 rounded-lg">
-                                  <span className="text-zinc-200 truncate pr-2">
-                                    {item.quantity}x {item.name}
+                                <div key={idx} className={`flex justify-between items-center text-xs p-2.5 rounded-lg border ${item.isUnverified ? "bg-rose-950/20 border-rose-500/40" : "bg-zinc-950/60 border-zinc-850"}`}>
+                                  <span className="text-zinc-200 truncate pr-2 flex items-center gap-1.5 flex-wrap">
+                                    <span>{item.quantity}x {item.name}</span>
                                     {item.portion < 1 && (
-                                      <span className="text-zinc-500 font-mono ml-1">
+                                      <span className="text-zinc-500 font-mono">
                                         ({(item.portion * 100).toFixed(0)}% share)
+                                      </span>
+                                    )}
+                                    {item.isUnverified && (
+                                      <span className="text-rose-400 text-[10px] font-bold bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20 inline-flex items-center gap-0.5">
+                                        <AlertTriangle className="w-2.5 h-2.5" /> Not on receipt
                                       </span>
                                     )}
                                   </span>

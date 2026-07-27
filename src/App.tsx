@@ -20,7 +20,11 @@ import {
   Check,
   UserPlus,
   ArrowRight,
-  BookOpen
+  BookOpen,
+  AlertTriangle,
+  XCircle,
+  CheckCircle2,
+  ShieldAlert
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -37,6 +41,11 @@ export default function App() {
   const [assignments, setAssignments] = useState<Record<string, string[]>>({});
   const [isOcrLoading, setIsOcrLoading] = useState(false);
 
+  // Valid official items present on the original parsed receipt
+  const [officialReceiptItemNames, setOfficialReceiptItemNames] = useState<string[]>(
+    DEMO_RECEIPT.items.map((i) => i.name)
+  );
+
   // New Guest Input state
   const [newGuestName, setNewGuestName] = useState("");
   
@@ -44,6 +53,13 @@ export default function App() {
   const [manualItemName, setManualItemName] = useState("");
   const [manualItemPrice, setManualItemPrice] = useState("");
   const [manualItemQty, setManualItemQty] = useState("1");
+
+  // Error result state for food item validation
+  const [manualItemError, setManualItemError] = useState<{
+    attemptedName: string;
+    message: string;
+    suggestion: string;
+  } | null>(null);
 
   // Edit states for individual items
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -55,6 +71,34 @@ export default function App() {
   const [editingTaxes, setEditingTaxes] = useState(false);
   const [tempServicePercent, setTempServicePercent] = useState("10");
   const [tempTaxPercent, setTempTaxPercent] = useState("9");
+
+  // Helper function to validate if a food item is stated on the official receipt
+  const checkItemInReceipt = (itemName: string, validNames: string[]) => {
+    if (!itemName.trim()) return { isValid: false, reason: "Item name cannot be empty" };
+    if (validNames.length === 0) return { isValid: true }; // No official receipt loaded yet
+
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const normInput = normalize(itemName);
+
+    for (const name of validNames) {
+      const normName = normalize(name);
+      // Exact or substring match (e.g., "Chianti" vs "Glass Chianti Classico")
+      if (normInput === normName || normName.includes(normInput) || normInput.includes(normName)) {
+        return { isValid: true, matchedName: name };
+      }
+      // Word overlap (for words longer than 2 characters)
+      const inputWords = itemName.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+      const officialWords = name.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+      if (inputWords.some((w) => officialWords.some((ow) => ow.includes(w) || w.includes(ow)))) {
+        return { isValid: true, matchedName: name };
+      }
+    }
+
+    return {
+      isValid: false,
+      reason: `"${itemName}" is not stated in the official receipt!`,
+    };
+  };
 
   // Load the Workshop 7 Case Study on initial mount as a delightful default!
   useEffect(() => {
@@ -79,6 +123,8 @@ export default function App() {
     setGuests(DEMO_GUESTS);
     setReceipt(DEMO_RECEIPT);
     setAssignments(DEMO_ASSIGNMENTS);
+    setOfficialReceiptItemNames(DEMO_RECEIPT.items.map((i) => i.name));
+    setManualItemError(null);
   };
 
   // Clear state helper
@@ -92,11 +138,16 @@ export default function App() {
       total: 0,
     });
     setAssignments({});
+    setOfficialReceiptItemNames([]);
+    setManualItemError(null);
   };
 
   // Receipt Scanner parsed handler
   const handleReceiptParsed = (data: ReceiptData) => {
     setReceipt(data);
+    setOfficialReceiptItemNames(data.items.map((i) => i.name));
+    setManualItemError(null);
+
     // Auto populate sample guests if empty
     if (guests.length === 0) {
       setGuests([
@@ -138,18 +189,38 @@ export default function App() {
     setAssignments(updatedAssignments);
   };
 
-  // Item Management (Manual entry)
+  // Item Management (Manual entry with Validation)
   const handleAddManualItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualItemName.trim() || !manualItemPrice) return;
 
+    const nameToTest = manualItemName.trim();
+    const validation = checkItemInReceipt(nameToTest, officialReceiptItemNames);
+
+    if (!validation.isValid) {
+      // Trigger error result for unstated food item
+      setManualItemError({
+        attemptedName: nameToTest,
+        message: `Error: "${nameToTest}" is not stated in the official receipt!`,
+        suggestion: `Food items added to the cost splitter must match items on the parsed receipt. Check your spelling or choose from valid receipt items below.`,
+      });
+      return;
+    }
+
+    forceAddManualItem(nameToTest, false);
+  };
+
+  const forceAddManualItem = (itemName: string, isFlaggedUnverified: boolean = false) => {
     const qty = parseInt(manualItemQty) || 1;
     const price = parseFloat(manualItemPrice) || 0;
+    const validation = checkItemInReceipt(itemName, officialReceiptItemNames);
+
     const newItem: ReceiptItem = {
       id: `item_manual_${Date.now()}`,
-      name: manualItemName.trim(),
+      name: itemName,
       quantity: qty,
       totalPrice: parseFloat((price * qty).toFixed(2)),
+      isUnverified: isFlaggedUnverified || !validation.isValid,
     };
 
     setReceipt((prev) => ({
@@ -165,6 +236,7 @@ export default function App() {
     setManualItemName("");
     setManualItemPrice("");
     setManualItemQty("1");
+    setManualItemError(null);
   };
 
   const handleRemoveItem = (itemId: string) => {
@@ -339,117 +411,166 @@ export default function App() {
                     No items listed. Try uploading a receipt or click "Load Workshop 7 Demo"
                   </div>
                 ) : (
-                  receipt.items.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`group border rounded-xl p-3 flex flex-col transition-all ${
-                        editingItemId === item.id
-                          ? "border-indigo-500/50 bg-indigo-950/20"
-                          : "border-zinc-800 bg-zinc-900/10 hover:border-zinc-700/80"
-                      }`}
-                    >
-                      {editingItemId === item.id ? (
-                        /* Inline Edit Mode */
-                        <div className="space-y-2">
-                          <input
-                            type="text"
-                            value={editItemName}
-                            onChange={(e) => setEditItemName(e.target.value)}
-                            className="w-full text-xs font-semibold p-1.5 border border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-zinc-950/60 text-zinc-200"
-                            placeholder="Item name"
-                          />
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className="block text-xxs text-zinc-500 mb-0.5 font-semibold uppercase tracking-wider">Qty</label>
-                              <input
-                                type="number"
-                                value={editItemQty}
-                                onChange={(e) => setEditItemQty(e.target.value)}
-                                className="w-full text-xs p-1.5 border border-zinc-700 rounded-lg focus:outline-none bg-zinc-950/60 text-zinc-200"
-                                min="1"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xxs text-zinc-500 mb-0.5 font-semibold uppercase tracking-wider">Unit Price ($)</label>
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={editItemPrice}
-                                onChange={(e) => setEditItemPrice(e.target.value)}
-                                className="w-full text-xs p-1.5 border border-zinc-700 rounded-lg focus:outline-none bg-zinc-950/60 text-zinc-200"
-                              />
-                            </div>
-                          </div>
-                          <div className="flex justify-end gap-1.5 pt-1">
-                            <button
-                              onClick={() => setEditingItemId(null)}
-                              className="px-2.5 py-1 text-zinc-400 hover:bg-zinc-800 rounded-md text-xxs font-semibold"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              onClick={saveEditedItem}
-                              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-xxs font-bold flex items-center gap-1 cursor-pointer"
-                            >
-                              <Check className="w-3 h-3" /> Save
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        /* Normal Row View */
-                        <div className="flex justify-between items-center">
-                          <div className="flex-1 min-w-0 pr-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-zinc-300 text-xs bg-zinc-950 border border-zinc-800 px-1.5 py-0.5 rounded-md min-w-[20px] text-center">
-                                {item.quantity}x
-                              </span>
-                              <span className="font-semibold text-zinc-200 text-xs truncate">
-                                {item.name}
-                              </span>
-                            </div>
-                            <span className="text-xxs text-zinc-500 mt-0.5 block">
-                              Unit price: ${(item.totalPrice / item.quantity).toFixed(2)}
-                            </span>
-                          </div>
+                  receipt.items.map((item) => {
+                    const validation = checkItemInReceipt(item.name, officialReceiptItemNames);
+                    const isUnstated = !validation.isValid || item.isUnverified;
 
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-zinc-100 text-xs font-mono">
-                              ${item.totalPrice.toFixed(2)}
-                            </span>
-                            <div className="flex opacity-0 group-hover:opacity-100 transition-opacity gap-1">
+                    return (
+                      <div
+                        key={item.id}
+                        className={`group border rounded-xl p-3 flex flex-col transition-all ${
+                          isUnstated
+                            ? "border-rose-500/60 bg-rose-950/20 shadow-inner"
+                            : editingItemId === item.id
+                            ? "border-indigo-500/50 bg-indigo-950/20"
+                            : "border-zinc-800 bg-zinc-900/10 hover:border-zinc-700/80"
+                        }`}
+                      >
+                        {editingItemId === item.id ? (
+                          /* Inline Edit Mode */
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={editItemName}
+                              onChange={(e) => setEditItemName(e.target.value)}
+                              className="w-full text-xs font-semibold p-1.5 border border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-zinc-950/60 text-zinc-200"
+                              placeholder="Item name"
+                            />
+                            {editItemName.trim() && !checkItemInReceipt(editItemName, officialReceiptItemNames).isValid && (
+                              <p className="text-xxs text-rose-400 font-bold flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 text-rose-400" />
+                                Warning: "{editItemName}" is not stated in the official receipt.
+                              </p>
+                            )}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-xxs text-zinc-500 mb-0.5 font-semibold uppercase tracking-wider">Qty</label>
+                                <input
+                                  type="number"
+                                  value={editItemQty}
+                                  onChange={(e) => setEditItemQty(e.target.value)}
+                                  className="w-full text-xs p-1.5 border border-zinc-700 rounded-lg focus:outline-none bg-zinc-950/60 text-zinc-200"
+                                  min="1"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xxs text-zinc-500 mb-0.5 font-semibold uppercase tracking-wider">Unit Price ($)</label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={editItemPrice}
+                                  onChange={(e) => setEditItemPrice(e.target.value)}
+                                  className="w-full text-xs p-1.5 border border-zinc-700 rounded-lg focus:outline-none bg-zinc-950/60 text-zinc-200"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex justify-end gap-1.5 pt-1">
                               <button
-                                onClick={() => startEditingItem(item)}
-                                className="p-1 text-zinc-400 hover:text-indigo-400 rounded-lg hover:bg-zinc-800 transition cursor-pointer"
-                                title="Edit Item"
+                                onClick={() => setEditingItemId(null)}
+                                className="px-2.5 py-1 text-zinc-400 hover:bg-zinc-800 rounded-md text-xxs font-semibold"
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
+                                Cancel
                               </button>
                               <button
-                                onClick={() => handleRemoveItem(item.id)}
-                                className="p-1 text-zinc-400 hover:text-rose-400 rounded-lg hover:bg-zinc-800 transition cursor-pointer"
-                                title="Delete Item"
+                                onClick={saveEditedItem}
+                                className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-xxs font-bold flex items-center gap-1 cursor-pointer"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Check className="w-3 h-3" /> Save
                               </button>
                             </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  ))
+                        ) : (
+                          /* Normal Row View */
+                          <div>
+                            <div className="flex justify-between items-center">
+                              <div className="flex-1 min-w-0 pr-3">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-zinc-300 text-xs bg-zinc-950 border border-zinc-800 px-1.5 py-0.5 rounded-md min-w-[20px] text-center">
+                                    {item.quantity}x
+                                  </span>
+                                  <span className={`font-semibold text-xs truncate ${isUnstated ? "text-rose-200 font-bold" : "text-zinc-200"}`}>
+                                    {item.name}
+                                  </span>
+                                  {isUnstated && (
+                                    <span className="bg-rose-500/15 text-rose-400 border border-rose-500/30 text-[10px] font-extrabold px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                                      <AlertTriangle className="w-3 h-3" />
+                                      Not on Receipt
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-xxs text-zinc-500 mt-0.5 block">
+                                  Unit price: ${(item.totalPrice / item.quantity).toFixed(2)}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-zinc-100 text-xs font-mono">
+                                  ${item.totalPrice.toFixed(2)}
+                                </span>
+                                <div className="flex opacity-0 group-hover:opacity-100 transition-opacity gap-1">
+                                  <button
+                                    onClick={() => startEditingItem(item)}
+                                    className="p-1 text-zinc-400 hover:text-indigo-400 rounded-lg hover:bg-zinc-800 transition cursor-pointer"
+                                    title="Edit Item"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleRemoveItem(item.id)}
+                                    className="p-1 text-zinc-400 hover:text-rose-400 rounded-lg hover:bg-zinc-800 transition cursor-pointer"
+                                    title="Delete Item"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Explicit inline error result for unstated receipt items */}
+                            {isUnstated && (
+                              <div className="mt-2 pt-1.5 border-t border-rose-500/20 text-[11px] text-rose-300 font-medium flex items-center gap-1.5">
+                                <XCircle className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
+                                <span>Item error: <strong>"{item.name}"</strong> is not stated in the official receipt.</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
 
               {/* Add Manual Item Form */}
               <form onSubmit={handleAddManualItem} className="border-t border-zinc-800/60 pt-4 space-y-2">
-                <p className="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Add Item Manually</p>
+                <div className="flex justify-between items-center">
+                  <p className="text-xxs font-bold text-zinc-500 uppercase tracking-wider">Add Item Manually</p>
+                  {manualItemName.trim() && (
+                    <div>
+                      {checkItemInReceipt(manualItemName, officialReceiptItemNames).isValid ? (
+                        <span className="text-xxs text-emerald-400 font-semibold flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Valid item on receipt
+                        </span>
+                      ) : (
+                        <span className="text-xxs text-rose-400 font-extrabold flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-rose-400" /> Not stated on receipt
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={manualItemName}
                     onChange={(e) => setManualItemName(e.target.value)}
-                    placeholder="E.g. Chianti Classico"
-                    className="flex-1 text-xs p-2 border border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-zinc-950/40 text-zinc-200 focus:bg-zinc-900/60 placeholder-zinc-600"
+                    placeholder="E.g. Chicken Wings or Aperol Spritz"
+                    className={`flex-1 text-xs p-2 border rounded-lg focus:outline-none focus:ring-1 text-zinc-200 placeholder-zinc-600 transition-colors ${
+                      manualItemName.trim() && !checkItemInReceipt(manualItemName, officialReceiptItemNames).isValid
+                        ? "border-rose-500 bg-rose-950/20 focus:ring-rose-500"
+                        : "border-zinc-700 bg-zinc-950/40 focus:ring-indigo-500 focus:bg-zinc-900/60"
+                    }`}
                   />
                   <input
                     type="number"
@@ -469,11 +590,88 @@ export default function App() {
                   />
                   <button
                     type="submit"
-                    className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition cursor-pointer"
+                    className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition cursor-pointer flex items-center justify-center"
+                    title="Add Item"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
+
+                {/* Error Result Card for Non-Receipt Items */}
+                <AnimatePresence>
+                  {manualItemError && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.98 }}
+                      className="p-3.5 bg-rose-950/40 border border-rose-500/60 rounded-xl space-y-2 text-xs text-rose-200 mt-2 shadow-lg"
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <ShieldAlert className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5 animate-pulse" />
+                        <div className="flex-1 space-y-1">
+                          <div className="flex justify-between items-start">
+                            <h5 className="font-extrabold text-rose-200 text-xs flex items-center gap-1">
+                              ❌ Food Item Error Result
+                            </h5>
+                            <button
+                              type="button"
+                              onClick={() => setManualItemError(null)}
+                              className="text-rose-400 hover:text-rose-200 p-0.5 cursor-pointer"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <p className="font-extrabold text-rose-300 text-xs">
+                            {manualItemError.message}
+                          </p>
+                          <p className="text-xxs text-rose-200/90 leading-relaxed">
+                            {manualItemError.suggestion}
+                          </p>
+                          
+                          {officialReceiptItemNames.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-rose-500/20 text-xxs">
+                              <span className="font-bold text-rose-300 block mb-1">
+                                Click to select valid item from receipt:
+                              </span>
+                              <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                                {officialReceiptItemNames.map((name, i) => (
+                                  <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => {
+                                      setManualItemName(name);
+                                      setManualItemError(null);
+                                    }}
+                                    className="bg-rose-900/40 hover:bg-rose-800 border border-rose-500/30 text-rose-200 px-2 py-0.5 rounded text-[10px] font-medium transition cursor-pointer"
+                                  >
+                                    + {name}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="pt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setManualItemError(null)}
+                              className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded text-xxs font-bold transition cursor-pointer"
+                            >
+                              Fix Item Name
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => forceAddManualItem(manualItemError.attemptedName, true)}
+                              className="px-2.5 py-1 bg-rose-700 hover:bg-rose-800 text-white rounded text-xxs font-bold transition cursor-pointer"
+                            >
+                              Add Anyway (Flagged as Invalid)
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </form>
 
               {/* Subtotal & Taxes Breakdown */}
@@ -655,20 +853,31 @@ export default function App() {
                     const assignedGuests = assignments[item.id] || [];
                     const shareCount = assignedGuests.length;
                     const splitPrice = shareCount > 0 ? item.totalPrice / shareCount : 0;
+                    const isUnstated = !checkItemInReceipt(item.name, officialReceiptItemNames).isValid || item.isUnverified;
 
                     return (
                       <div
                         key={item.id}
-                        className="p-4 border border-zinc-800/60 bg-zinc-900/10 hover:border-zinc-750 rounded-xl space-y-3 transition-all"
+                        className={`p-4 border rounded-xl space-y-3 transition-all ${
+                          isUnstated
+                            ? "border-rose-500/50 bg-rose-950/20"
+                            : "border-zinc-800/60 bg-zinc-900/10 hover:border-zinc-750"
+                        }`}
                       >
                         {/* Item Row Overview */}
                         <div className="flex justify-between items-start">
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-bold text-zinc-300 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md font-mono">
                                 {item.quantity}x
                               </span>
                               <h4 className="font-bold text-zinc-200 text-sm">{item.name}</h4>
+                              {isUnstated && (
+                                <span className="bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3 text-rose-400" />
+                                  Not on receipt
+                                </span>
+                              )}
                             </div>
                             <p className="text-xxs text-zinc-450 mt-1">
                               Total Price: <span className="font-bold text-zinc-300">${item.totalPrice.toFixed(2)}</span>
